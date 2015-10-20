@@ -1,0 +1,144 @@
+### Export and processing data from *.RQDA files
+
+library(RQDA)
+
+RQDA() #opens GUI
+
+#---------preparing data (attribute data and cooccurrence matrices)---------
+
+# loads multiple .rqda files each into two separate data.frames (coding table and cooccurence/proximity matrix)
+setwd("c:/Users/Ocelot/Disk Google/ceners/Education/ESS/courses/Fall_ESS419_Theories of IR/essays/issues")
+files <- list.files(pattern=".rqda") 
+
+for (i in files) {
+  
+  setwd("c:/Users/Ocelot/Disk Google/ceners/Education/ESS/courses/Fall_ESS419_Theories of IR/essays/issues")
+  
+  # getting coding tables / attribute data
+  x <- openProject(i, updateGUI=F) #reads in a file
+  x <- getCodingTable() #saves coding table
+  x <- x[ order(x[,4]),] #sorts table according to codes
+  #x <- x[ order(x[,6], x[,7]), ] #sorts table according to codes' position 
+  xname <- paste(i) #pastes original *rqda file name
+  xname <- substr(xname, 1, nchar(xname)-5) #removes the last 5 characters (.rqda)
+  xname <- paste(xname, "_attribute", sep="") #adds data type to the end of the file name
+  colnames(x)[6] <- "start"
+  colnames(x)[7] <- "end"
+  colnames(x)[8] <- "length"
+  assign(xname, x) #assigns a name/character string to the values (data): x
+  setwd("c:/Users/Ocelot/Disk Google/ceners/Education/ESS/courses/Fall_ESS419_Theories of IR/essays/issues")
+  write.csv(x, file=paste(xname, ".csv", sep=""), row.names=F) #saves data
+  
+  
+}
+
+setwd("c:/Users/Ocelot/Disk Google/ceners/Education/ESS/courses/Fall_ESS419_Theories of IR/essays/issues")
+
+list <- list.files(pattern="attribute.csv") 
+
+for (j in list) {
+  
+  data <- read.csv(j, header=TRUE)
+  data <- data[,c(2,4)]
+  
+  freq <- as.data.frame(table(data[,2])) #counting the codes frequencies
+  nonzero <- freq[,2]!=0 #selects unobserved codes
+  freq <- freq[nonzero,] #subsets unobserved codes
+  freq <- freq[order(freq[,1]),]
+  colnames(freq) <- c("codename", "frequency")
+  fname <- paste(j) 
+  fname <- substr(fname, 1, nchar(fname)-14) 
+  fname <- paste(fname, "_freq", sep="")
+  assign(fname, freq)
+  
+  setwd("c:/Users/Ocelot/Disk Google/ceners/Education/ESS/courses/Fall_ESS419_Theories of IR/essays/issues")
+  write.csv(data, file=paste(fname, ".csv", sep=""), row.names=F)
+  
+}
+
+list2 <- list.files(pattern="freq.csv") 
+data2 <- read.csv(list2[[1]]) #reads in first file in the list
+
+for (k in list2) {
+  
+  v <- read.csv(k, header=TRUE) #reads in a file
+  v <- as.data.frame(table(v[,2]))
+  colnames(v)[1] <- "codename" 
+  vname <- paste(k) 
+  vname <- substr(vname, 1, nchar(vname)-4) 
+  vname <- paste(vname, "_frequency", sep="") 
+  assign(vname, v) #assigns a name/character string to the values (data): v
+  data2 <- merge(data2, v,  by = "codename", all = T) #merging data with folowing file (i)
+  data2[is.na(data2)] <- 0 #replaces NAs (missing codes) with 0s
+  
+}
+
+data2 <- data2[,-2] #removes the duplicate column (created before the loop) 
+data2 <- data2[duplicated(data2)==F,]
+rm(v)
+
+clabels <- levels(data2$codename) #saves code labels
+data2 <- data2[,-1] #delets labels
+bi.data <- as.data.frame(t(data2)) #transposes to affiliation matrix: IDs by codes
+colnames(bi.data) <- clabels #adds code labels
+rlabels <- substring(list2, 1, 2)
+rownames(bi.data) <- rlabels #adds row names (ID numbers) 
+# in fake data all *rqda files with 001 ID, not allowed (rows must have unique values)
+
+n <- length(bi.data[,1])
+name <- paste("n_", n, sep="")
+name <- paste(name, "_twomode_matrix", sep="")
+bi.data <- bi.data[order(rownames(bi.data)), order(colnames(bi.data))]
+assign(name, bi.data)
+
+setwd("c:/Users/Ocelot/Disk Google/ceners/Education/ESS/courses/Fall_ESS419_Theories of IR/essays/issues")
+write.csv(bi.data, file=paste(name, ".csv", sep=""), row.names=T)
+
+library(bipartite); library(data.table); library(network)
+
+#----------relational data processing----------
+
+setwd("c:/Users/Ocelot/Disk Google/ceners/Education/ESS/courses/Fall_ESS419_Theories of IR/essays/issues")
+
+f <- list.files(pattern="twomode_matrix.csv")
+cam <- read.csv(f)
+cam$X <- NULL
+
+cam <- as.matrix(cam) #incidence (codes by actors) matrix
+code.m <- as.one.mode(cam, project="higher", weighted=TRUE) #codes cooccurence matrix 
+actor.m <- as.one.mode(cam, project="lower", weighted=TRUE) #actors overlap matrix
+
+# incidence matrices
+plot.sociomatrix(cam) 
+
+# adjacency matrices
+plot.sociomatrix(code.m) 
+plot.sociomatrix(actor.m) 
+
+# bipartite networks
+cam.net <- network(cam, valued = T, bipartite = T, directed = F) 
+
+# one-mode networks
+code.net <- network(code.m, valued = T, bipartite = F, directed = F) 
+actor.net <- network(actor.m, valued = T, bipartite = F, directed = F)
+
+gplot(cam.net, gmode="twomode", 
+      mode="kamadakawai", interactive=F,  
+      label=network.vertex.names(cam.net), boxed.labels=F, label.pos=5, label.cex=0.75,
+      vertex.col=c(rep("lightgreen", dim(cam)[1]), rep("lightblue", dim(cam)[2])),
+      vertex.sides=c(rep(5, dim(cam)[1]), rep(20, dim(cam)[2])),
+      usearrows=F, edge.col="lightgrey")
+
+gplot(code.net, gmode="graph", mode="kamadakawai", usearrows=F, 
+      label=network.vertex.names(as.network(code.net)), label.pos=5
+      , vertex.col="lightblue", edge.col="lightgrey"
+      , edge.lwd=scale(code.m)
+      , vertex.cex=((betweenness(code.m, gmode="graph", ignore.eval=T)/50))
+)
+
+gplot(actor.net, gmode="graph", mode="kamadakawai", usearrows=F  
+      , label=network.vertex.names(network(actor.net)), label.pos=5, vertex.sides=5, edge.col="lightgrey"
+      , edge.lwd=scale(actor.m)
+      , vertex.col="lightgreen"
+      , vertex.cex=((degree(actor.m, gmode="graph", ignore.eval=F))/3)
+)
